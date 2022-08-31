@@ -61,13 +61,13 @@ class LogitsToPredicate(torch.nn.Module):
     Then, it applies a softmax function to get the probabilities per classes. Finally, it returns only the probability related
     to the given class l.
     """
-    def __init__(self, logits_model):
+    def __init__(self):
         super(LogitsToPredicate, self).__init__()
-        self.logits_model = logits_model
+      #  self.logits_model = logits_model
         self.softmax = torch.nn.Softmax(dim=1)
         self.sigmoid = torch.nn.Sigmoid()
 
-    def forward(self, x, l, training=False):
+    def forward(self, logits, l, training=False):
         '''
         l: [B,C]
         probs:[B,C]
@@ -76,7 +76,7 @@ class LogitsToPredicate(torch.nn.Module):
         '''
 
         
-        logits = self.logits_model(x, training=training)
+        #logits = self.logits_model(x, training=training)
         #probs = self.softmax(logits) #[B,C]
         probs = self.sigmoid(logits)
         
@@ -85,8 +85,8 @@ class LogitsToPredicate(torch.nn.Module):
 
 
 
-mlp = MLP()
-P = ltn.Predicate(LogitsToPredicate(mlp))
+net = MLP()
+P = ltn.Predicate(LogitsToPredicate())
 # we define the connectives, quantifiers, and the SatAgg
 Not = ltn.Connective(ltn.fuzzy_ops.NotStandard())
 And = ltn.Connective(ltn.fuzzy_ops.AndProd())
@@ -130,16 +130,14 @@ class DataLoader(object):
 # define metrics for evaluation of the model
 
 # it computes the overall satisfaction level on the knowledge base using the given data loader (train or test)
-def compute_sat_level(loader):
+def compute_sat_level(loader,Clause_Total):
     mean_sat = 0
     for data, labels in loader:
         x_A = ltn.Variable("x_A", data[labels == 0])
         x_B = ltn.Variable("x_B", data[labels == 1])
         x_C = ltn.Variable("x_C", data[labels == 2])
         mean_sat += SatAgg(
-            [Forall(x_A, P(x_A, l_A)),
-            Forall(x_B, P(x_B, l_B)),
-            Forall(x_C, P(x_C, l_C))]
+        Clause_Total
         )
     mean_sat /= len(loader)
     return mean_sat
@@ -149,7 +147,7 @@ def compute_sat_level(loader):
 def compute_accuracy(loader):
     mean_accuracy = 0.0
     for data, labels in loader:
-        predictions = mlp(data).detach().numpy()
+        predictions = net(data).detach().numpy()
         predictions = np.argmax(predictions, axis=1)
         mean_accuracy += accuracy_score(labels, predictions)
 
@@ -160,7 +158,7 @@ train_loader = DataLoader(train_data, train_labels, 64, shuffle=True)
 test_loader = DataLoader(test_data, test_labels, 64, shuffle=False)
 
 
-optimizer = torch.optim.Adam(P.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
 
 for epoch in range(2000):
     train_loss = 0.0
@@ -172,11 +170,15 @@ for epoch in range(2000):
     for batch_idx, (data, labels) in enumerate(train_loader):
         optimizer.zero_grad()
         # we ground the variables with current batch data
-        x = ltn.Variable("x",data)
-        x_A = ltn.Variable("x_A", data[labels == 0]) # class A examples
-        x_B = ltn.Variable("x_B", data[labels == 1]) # class B examples
-        x_C = ltn.Variable("x_C", data[labels == 2]) # class C examples
 
+        preds = net(data)
+
+        x = ltn.Variable("x",preds)
+        x_A = ltn.Variable("x_A", preds[labels == 0]) # class A examples
+        x_B = ltn.Variable("x_B", preds[labels == 1]) # class B examples
+        x_C = ltn.Variable("x_C", preds[labels == 2]) # class C examples
+
+        
         Clause_isa,isa_str = IsA_PairedClause(P,[x_A,x_B,x_C],[l_A,l_B,l_C])
         Clause_Exclusion,exc_str = ExclusionPairedClause(P,x,[l_A,l_B,l_C])
 
@@ -194,5 +196,5 @@ for epoch in range(2000):
     # we print metrics every 20 epochs of training
     if epoch % 20 == 0:
         print(" epoch %d | loss %.4f | Train Sat %.3f | Test Sat %.3f | Train Acc %.3f | Test Acc %.3f"
-              %(epoch, train_loss, compute_sat_level(train_loader), compute_sat_level(test_loader),
+              %(epoch, train_loss, compute_sat_level(train_loader,Clause_Total), compute_sat_level(test_loader,Clause_Total),
                     compute_accuracy(train_loader), compute_accuracy(test_loader)))
