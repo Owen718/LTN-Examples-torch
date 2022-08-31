@@ -121,10 +121,11 @@ class Constant(LTNObject):
     >>> print(t_c.shape())
     torch.Size([2, 3])
     """
-    def __init__(self, value, trainable=False):
+    def __init__(self, value, trainable=False,ConstantName=None):
         # create sub-object of type LTNObject
         super(Constant, self).__init__(value, [])
         self.value = self.value.to(ltn.device)
+        self.ConstantName = ConstantName
         if trainable:
             # we need to ensure that the tensor is float to set the required_grad to True, since PyTorch needs a float
             # tensor in this case

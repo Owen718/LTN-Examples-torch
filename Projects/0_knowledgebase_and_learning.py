@@ -80,9 +80,10 @@ optimizer = torch.optim.Adam(C.parameters(), lr=0.001)
 for epoch in range(2000):
     optimizer.zero_grad()
     loss = 1. - sat_agg(
-        C(a, l_a),
+        [C(a, l_a),
         C(b, l_b),
         Forall([x1, x2, l], Implies(Sim(x1, x2), Equiv(C(x1, l), C(x2, l))))
+        ]
     )
     loss.backward()
     optimizer.step()

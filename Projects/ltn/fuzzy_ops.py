@@ -1614,7 +1614,7 @@ class SatAgg:
     def __repr__(self):
         return "SatAgg(agg_op=" + str(self.agg_op) + ")"
 
-    def __call__(self, *closed_formulas):
+    def __call__(self, closed_formulas):
         """
         It applies the `SatAgg` aggregation operator to the given closed formula's :ref:`groundings <notegrounding>`.
 
@@ -1640,7 +1640,7 @@ class SatAgg:
         """
         # The closed formulas are identifiable since they are just scalar because all the variables
         # have been quantified (i.e., all dimensions have been aggregated).
-        truth_values = list(closed_formulas)
+        truth_values = closed_formulas
         if not all(isinstance(x, (LTNObject, torch.Tensor)) for x in truth_values):
             raise TypeError("Expected parameter 'closed_formulas' to be a tuple of LTNObject and/or tensors, "
                             "but got " + str([type(f) for f in closed_formulas]))

@@ -1,6 +1,6 @@
 import torch
 import pandas as pd
-
+from ltn_utils.utils import ExclusionPairedClause,IsA_PairedClause
 train_data = pd.read_csv("Projects/datasets/iris_training.csv")
 test_data = pd.read_csv("Projects/datasets/iris_test.csv")
 
@@ -15,9 +15,9 @@ test_labels = torch.tensor(test_labels.to_numpy()).long()
 import ltn
 
 # we define the constants
-l_A = ltn.Constant(torch.tensor([1, 0, 0]))
-l_B = ltn.Constant(torch.tensor([0, 1, 0]))
-l_C = ltn.Constant(torch.tensor([0, 0, 1]))
+l_A = ltn.Constant(torch.tensor([1, 0, 0]),ConstantName='l_A')
+l_B = ltn.Constant(torch.tensor([0, 1, 0]),ConstantName='l_B')
+l_C = ltn.Constant(torch.tensor([0, 0, 1]),ConstantName='l_C')
 
 # we define predicate P
 class MLP(torch.nn.Module):
@@ -77,15 +77,17 @@ class LogitsToPredicate(torch.nn.Module):
 
         
         logits = self.logits_model(x, training=training)
-        probs = self.softmax(logits) #[B,C]
-        #probs = self.sigmoid(logits)
+        #probs = self.softmax(logits) #[B,C]
+        probs = self.sigmoid(logits)
         
         out = torch.sum(probs * l, dim=1)
         return out
 
 mlp = MLP()
 P = ltn.Predicate(LogitsToPredicate(mlp))
-
+# we define the connectives, quantifiers, and the SatAgg
+Not = ltn.Connective(ltn.fuzzy_ops.NotStandard())
+And = ltn.Connective(ltn.fuzzy_ops.AndProd())
 # we define the connectives, quantifiers, and the SatAgg
 Forall = ltn.Quantifier(ltn.fuzzy_ops.AggregPMeanError(p=2), quantifier="f")
 SatAgg = ltn.fuzzy_ops.SatAgg()
@@ -133,9 +135,9 @@ def compute_sat_level(loader):
         x_B = ltn.Variable("x_B", data[labels == 1])
         x_C = ltn.Variable("x_C", data[labels == 2])
         mean_sat += SatAgg(
-            Forall(x_A, P(x_A, l_A)),
+            [Forall(x_A, P(x_A, l_A)),
             Forall(x_B, P(x_B, l_B)),
-            Forall(x_C, P(x_C, l_C))
+            Forall(x_C, P(x_C, l_C))]
         )
     mean_sat /= len(loader)
     return mean_sat
@@ -168,14 +170,19 @@ for epoch in range(2000):
     for batch_idx, (data, labels) in enumerate(train_loader):
         optimizer.zero_grad()
         # we ground the variables with current batch data
+        x = ltn.Variable("x",data)
         x_A = ltn.Variable("x_A", data[labels == 0]) # class A examples
         x_B = ltn.Variable("x_B", data[labels == 1]) # class B examples
         x_C = ltn.Variable("x_C", data[labels == 2]) # class C examples
+
+        Clause_isa,isa_str = IsA_PairedClause(P,[x_A,x_B,x_C],[l_A,l_B,l_C])
+        Clause_Exclusion,exc_str = ExclusionPairedClause(P,x,[l_A,l_B,l_C])
+
+        
+        Clause_Total = Clause_isa+Clause_Exclusion
         sat_agg = SatAgg(
-            Forall(x_A, P(x_A, l_A, training=True)),
-            Forall(x_B, P(x_B, l_B, training=True)),
-            Forall(x_C, P(x_C, l_C, training=True))
-        )
+            Clause_Total
+         )
         loss = 1. - sat_agg
         loss.backward()
         optimizer.step()
